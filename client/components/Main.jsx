@@ -39,6 +39,36 @@ const sortOrders = [{
   label: 'Status (building, failed, cancelled, passed, paused)'
 }];
 
+function getParameterByName(name, url = window.location.href) {
+  name = name.replace(/[\[\]]/g, "\\$&");
+  const regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)");
+  const results = regex.exec(url);
+  if (!results || !results[2]) {
+    return null;
+  }
+  return decodeURIComponent(results[2].replace(/\+/g, " "));
+}
+
+const buildFullDisabledList = (disabledByConfig) => {
+  const ignoreParameterValue = getParameterByName("ignore");
+  if (!ignoreParameterValue) {
+    return disabledByConfig;
+  }
+
+  const disabledByUrl = ignoreParameterValue.split(",");
+
+  if (!disabledByUrl.length) {
+    return disabledByConfig;
+  }
+
+  return disabledByUrl.reduce((allDisabled, currentDisabled) => {
+    if(!allDisabled.includes(currentDisabled)) {
+      allDisabled.push(currentDisabled);
+    }
+
+    return allDisabled;
+  }, disabledByConfig);
+};
 
 export default class Main extends React.Component {
 
@@ -84,6 +114,7 @@ export default class Main extends React.Component {
     this.socket.on('pipelines:updated', (newPipelines) => {
       let disabledPipelines = this.state.disabledPipelines.slice();
       let sortOrderName = this.state.sortOrder.name;
+
       this.setState({
         pipelines: this.sortPipelines(newPipelines, disabledPipelines, sortOrderName)
       })
@@ -201,13 +232,33 @@ export default class Main extends React.Component {
   /**
    * Sort pipelines by date and filter out pipelines without data
    *
-   * @param   {Array}   pipelines         The pipelines to sort
-   * @param   {Array}   disabledPipelines Pipelines that are disabled
-   * @param   {string}  sortOrder         The sort order, 'buildtime' or 'status'
-   * @return  {Array}   Sorted pipelines
+   * @param   {Array}   pipelines                       The pipelines to Filter
+   * @param   {Array}   configuredDisabledPipelines     Pipelines that are disabled by configuration
+   * @return  {Array}                                   Filtered pipelines
    */
-  sortPipelines(pipelines, disabledPipelines, sortOrder) {
-    const activePipelines = pipelines.filter(p => p && p.name && disabledPipelines.indexOf(p.name) < 0);
+  filterPipelines(pipelines, configuredDisabledPipelines) {
+    const disabledPipelines = buildFullDisabledList(configuredDisabledPipelines);
+
+    const ignoreGroupParameter = getParameterByName("ignoreGroups") || "";
+    
+    const groupsToIgnore = ignoreGroupParameter.split(",");
+    
+    const activePipelines = pipelines.filter(p => p && p.name && disabledPipelines.indexOf(p.name) < 0
+      && (!groupsToIgnore.length || !groupsToIgnore.includes(p.group)));
+    return activePipelines;
+  }
+
+  /**
+   * Sort pipelines by date and filter out pipelines without data
+   *
+   * @param   {Array}   pipelines                     The pipelines to sort
+   * @param   {Array}   configuredDisabledPipelines   Pipelines that are disabled by configuration
+   * @param   {string}  sortOrder                     The sort order, 'buildtime' or 'status'
+   * @return  {Array}                                 Sorted and filtered pipelines
+   */
+  sortPipelines(pipelines, configuredDisabledPipelines, sortOrder) {
+    const activePipelines = this.filterPipelines(pipelines, configuredDisabledPipelines);
+
     // Add "time ago" moment string
     activePipelines.forEach((pipeline) => {
       pipeline.timeago = moment(pipeline.buildtime).fromNow();

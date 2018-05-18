@@ -54,22 +54,31 @@ export default class GoService {
       let currentPipelines = [];
       const pipelinesToIgnore = this.currentSettings.disabledPipelines;
       const pipelinesToFetch = pipelineNames.filter(p => pipelinesToIgnore.indexOf(p) < 0);
-      pipelinesToFetch.forEach((name) => {
-        this.buildService.getPipelineHistory(name).then((pipeline) => {
-          // Add pause information
-          if (this.pipelinesPauseInfo[name] && pipeline) {
-            pipeline.pauseinfo = this.pipelinesPauseInfo[name];
-          }
-          currentPipelines.push(pipeline);
-          if (currentPipelines.length === pipelinesToFetch.length) {
-            this.pipelines = currentPipelines;
-            // Update tests if needed
-            this.updateTestResults(currentPipelines);
-            Logger.debug(`Emitting ${currentPipelines.length} pipelines to ${this.clients.length} clients`);
-            this.notifyAllClients('pipelines:updated', currentPipelines);
-          }
+
+      this.buildService.getPipelineGroups()
+        .then(groups => {
+          pipelinesToFetch.forEach((name) => {
+            this.buildService.getPipelineHistory(name).then((pipeline) => {
+              const matchingGroups = groups.filter(group => group.pipelines.some(groupPipeline => groupPipeline.name === name));
+
+              if (matchingGroups.length) {
+                pipeline.group = matchingGroups[0].name;
+              }
+              // Add pause information
+              if (this.pipelinesPauseInfo[name] && pipeline) {
+                pipeline.pauseinfo = this.pipelinesPauseInfo[name];
+              }
+              currentPipelines.push(pipeline);
+              if (currentPipelines.length === pipelinesToFetch.length) {
+                this.pipelines = currentPipelines;
+                // Update tests if needed
+                this.updateTestResults(currentPipelines);
+                Logger.debug(`Emitting ${currentPipelines.length} pipelines to ${this.clients.length} clients`);
+                this.notifyAllClients('pipelines:updated', currentPipelines);
+              }
+            });
+          });
         });
-      });
     };
 
     let pollId;
